@@ -20,7 +20,7 @@
   --space-4:16px;
   --space-6:24px;
   --space-8:32px;
-  --font: Arial, "Segoe UI", sans-serif;
+  --font: "Manrope", Arial, "Segoe UI", sans-serif;
   --primary: light-dark(#921a1d, #a63d46);
   color-scheme: light dark;
 }
