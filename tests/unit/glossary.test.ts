@@ -1,0 +1,6 @@
+import {it,expect} from "vitest";
+import {cleanTerm,normalizeTerm} from "../../src/modules/glossary/model";
+import {previewSchema,mutationSchema} from "../../src/modules/glossary/schemas";
+it("normalizes compatibility characters, case and whitespace without stemming",()=>{expect(normalizeTerm("  ＰＵＢＬＩＣ\u00a0  Policy ")).toBe("public policy");expect(cleanTerm("  public   policy ")).toBe("public policy");expect(normalizeTerm("growth-rate")).toBe("growth-rate");expect(normalizeTerm("policies")).not.toBe(normalizeTerm("policy"));});
+it("does not accept ambiguous or oversized batches",()=>{const enrollmentId="2bf1429a-3695-41e5-8e5c-5c89173e7316";expect(previewSchema.safeParse({enrollmentId,text:"word",rows:[]}).success).toBe(false);expect(previewSchema.safeParse({enrollmentId,rows:Array.from({length:501},(_,i)=>({line:i+1,term:"x",translation:""}))}).success).toBe(false);});
+it("cannot set acceptance or ownership fields by saving a term",()=>{expect(mutationSchema.safeParse({operation:"save",key:"2bf1429a-3695-41e5-8e5c-5c89173e7316",enrollmentId:"2bf1429a-3695-41e5-8e5c-5c89173e7316",fields:{term:"word",translation:"слово",definition:"",context:""},accepted:true}).success).toBe(false);});

@@ -1,0 +1,20 @@
+import { sql } from "drizzle-orm";
+import { pgTable, uuid, text, boolean, integer, timestamp, date, jsonb, uniqueIndex, unique, foreignKey, check, index } from "drizzle-orm/pg-core";
+const timestamps = () => ({ createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(), version: integer("version").default(1).notNull() });
+export const users = pgTable("app_user", {
+  id: uuid("id").defaultRandom().primaryKey(), authId: text("auth_id").unique(), email: text("email").notNull(), fullName: text("full_name").notNull(),
+  role: text("role", { enum: ["admin", "teacher", "student"] }).notNull(), active: boolean("active").default(true).notNull(), ...timestamps(),
+}, t => [uniqueIndex("app_user_email_key").on(sql`lower(${t.email})`), check("app_user_role", sql`${t.role} in ('admin','teacher','student')`)]);
+export const studentProfiles = pgTable("student_profile", { userId: uuid("user_id").primaryKey().references(() => users.id) });
+export const teacherProfiles = pgTable("teacher_profile", { userId: uuid("user_id").primaryKey().references(() => users.id) });
+export const periods = pgTable("academic_period", {
+  id: uuid("id").defaultRandom().primaryKey(), name: text("name").notNull(), startsOn: date("starts_on").notNull(), endsOn: date("ends_on").notNull(), preparationDeadline: date("preparation_deadline").notNull(),
+  targetCharacters: integer("target_characters").default(600000).notNull(), targetTerms: integer("target_terms").default(500).notNull(), timezone: text("timezone").default("Europe/Moscow").notNull(), archived: boolean("archived").default(false).notNull(), ...timestamps(),
+}, t => [check("period_dates", sql`${t.endsOn} >= ${t.startsOn}`), check("period_targets", sql`${t.targetCharacters}>0 and ${t.targetTerms}>0`)]);
+export const groups = pgTable("academic_group", { id: uuid("id").defaultRandom().primaryKey(), periodId: uuid("period_id").notNull().references(() => periods.id), name: text("name").notNull(), ...timestamps() }, t => [unique("group_name_period").on(t.periodId,t.name), unique("group_period_id").on(t.id,t.periodId)]);
+export const enrollments = pgTable("enrollment", {
+  id: uuid("id").defaultRandom().primaryKey(), studentId: uuid("student_id").notNull().references(() => studentProfiles.userId), teacherId: uuid("teacher_id").notNull().references(() => teacherProfiles.userId),
+  groupId: uuid("group_id").notNull(), periodId: uuid("period_id").notNull(), specialty: text("specialty").notNull(), language: text("language").default("en").notNull(), dissertationTopic: text("dissertation_topic").default("").notNull(), supervisorName: text("supervisor_name").default("").notNull(), ...timestamps(),
+}, t => [foreignKey({ columns:[t.groupId,t.periodId], foreignColumns:[groups.id,groups.periodId] }), unique("enrollment_student_period").on(t.studentId,t.periodId), index("enrollment_teacher_idx").on(t.teacherId)]);
+export const auditEvents = pgTable("audit_event", { id: uuid("id").defaultRandom().primaryKey(), actorId: uuid("actor_id").references(() => users.id), action: text("action").notNull(), entityId: uuid("entity_id"), details: jsonb("details").notNull(), requestId: uuid("request_id").notNull(), happenedAt: timestamp("happened_at", { withTimezone:true }).defaultNow().notNull() });
+export const idempotencyRequests = pgTable("idempotency_request", { id: uuid("id").defaultRandom().primaryKey(), actorId: uuid("actor_id").notNull().references(() => users.id), operation: text("operation").notNull(), key: uuid("key").notNull(), payloadHash: text("payload_hash").notNull(), result: jsonb("result").notNull(), createdAt: timestamp("created_at", { withTimezone:true }).defaultNow().notNull() }, t => [unique("idempotency_actor_operation_key").on(t.actorId,t.operation,t.key)]);

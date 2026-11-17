@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env*
+!.env.example
+*.tsbuildinfo
+playwright-report/
+test-results/
+coverage/
+next-env.d.ts
+.neon
+certificates/
+*.log

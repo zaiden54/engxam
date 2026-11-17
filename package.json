@@ -1,0 +1,58 @@
+{
+  "name": "engxam",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:test": "node scripts/dev-test.mjs",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "test:db": "tsx scripts/check-database.ts",
+    "test:storage": "tsx scripts/check-storage.ts",
+    "dev:https": "node scripts/local-certificate.mjs && next dev --hostname localhost --experimental-https --experimental-https-key certificates/localhost-key.pem --experimental-https-cert certificates/localhost.pem",
+    "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
+    "test:literature": "tsx scripts/test-literature.ts",
+    "test:glossary": "tsx scripts/test-glossary.ts"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1168.0",
+    "@aws-sdk/s3-request-presigner": "3.1168.0",
+    "@neon/auth": "0.8.2",
+    "@neon/config": "1.14.0",
+    "@neon/env": "2.1.3",
+    "@next/env": "16.4.6",
+    "@vercel/functions": "3.11.2",
+    "drizzle-orm": "0.45.4",
+    "next": "16.4.6",
+    "pdf-lib": "1.17.1",
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "0.0.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "drizzle-kit": "0.31.11",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.6",
+    "selfsigned": "5.5.0",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  },
+  "type": "module"
+}
