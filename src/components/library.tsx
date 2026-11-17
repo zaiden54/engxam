@@ -1,16 +1,19 @@
 "use client";
+import Form from "next/form";
 import {useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 import {PageHeader} from "./ui/page-header";
+import {SourceProgress} from "./study-progress";
+import {Dialog,useDialog} from "./ui/dialog";
 import type {MetadataInput} from "@/modules/literature/schemas";
 export type LibraryItem=MetadataInput&{id:string;version:number;revisionNo:number;pageCount:number;originalName:string;archivedAt:string|null;fileLockedAt:string|null;pendingDefenseCount:number};
 export type LibraryData={enrollmentId:string;canEdit:boolean;items:LibraryItem[];page:number;hasNext:boolean;totals:{characters:string;count:number}};
 async function api<T>(path:string,method:string,data?:unknown):Promise<T>{let response:Response;try{response=await fetch(path,{method,headers:data?{"Content-Type":"application/json"}:{},body:data?JSON.stringify(data):undefined,signal:AbortSignal.timeout(90000)});}catch{throw Error("Сервер не ответил. Проверьте соединение и повторите запрос.");}const result=await response.json().catch(()=>null);if(!response.ok||!result)throw Error(result?.message??"Не удалось выполнить действие. Повторите попытку.");return result;}
-function LiteratureForm({enrollmentId,item}:{enrollmentId:string;item?:LibraryItem}){
+function LiteratureForm({enrollmentId,item,onSaved,onBusyChange}:{enrollmentId:string;item?:LibraryItem;onSaved?:(message:string)=>void;onBusyChange?:(busy:boolean)=>void}){
   const [message,setMessage]=useState("");const [busy,setBusy]=useState(false);const [progress,setProgress]=useState<number|null>(null);const [readyFile,setReadyFile]=useState<string|null>(item?.fileId??null);
   const upload=useRef<{file:File;id?:string;key:string}|null>(null);const saveKey=useRef<string|null>(null);const cancel=useRef<XMLHttpRequest|null>(null);const router=useRouter();
   return <form className="stack-form" autoComplete="off" aria-busy={busy} onChange={()=>{saveKey.current=null;}} onSubmit={async event=>{
-    event.preventDefault();const form=event.currentTarget;const values=new FormData(form);setBusy(true);setMessage("");
+    event.preventDefault();if(busy)return;const form=event.currentTarget;const values=new FormData(form);setBusy(true);onBusyChange?.(true);setMessage("");
     try{
       let fileId=readyFile;const chosen=values.get("pdf");
       if(chosen instanceof File&&chosen.size){
@@ -30,9 +33,9 @@ function LiteratureForm({enrollmentId,item}:{enrollmentId:string;item?:LibraryIt
       const s=(name:string)=>String(values.get(name)??"");
       const metadata:MetadataInput={title:s("title"),authors:s("authors"),materialType:s("materialType") as MetadataInput["materialType"],publicationYear:Number(s("publicationYear")),publicationSource:s("publicationSource"),doi:s("doi"),url:s("url"),publicationPages:s("publicationPages"),declaredCharacters:Number(s("declaredCharacters")),declaredWords:s("declaredWords")?Number(s("declaredWords")):null,fileId};
       saveKey.current??=crypto.randomUUID();const result=await api<{id:string;warning:string|null}>("/api/literature","POST",{key:saveKey.current,enrollmentId,...(item?{id:item.id,version:item.version}:{}),metadata});
-      saveKey.current=null;setMessage(result.warning??"Материал сохранён. Загрузка не означает зачёт объёма.");
-      if(!item){form.reset();setReadyFile(null);upload.current=null;}router.refresh();
-    }catch(e){setProgress(null);setMessage(e instanceof Error?e.message:"Не удалось сохранить материал.");}finally{setBusy(false);cancel.current=null;}
+      saveKey.current=null;const notice=result.warning??"Источник сохранён. Загрузка не означает зачёт объёма.";setMessage(notice);
+      if(!item){form.reset();setReadyFile(null);upload.current=null;}onSaved?.(notice);router.refresh();
+    }catch(e){setProgress(null);setMessage(e instanceof Error?e.message:"Не удалось сохранить материал.");}finally{setBusy(false);onBusyChange?.(false);cancel.current=null;}
   }}><fieldset disabled={busy}>
     <label>Название<input name="title" defaultValue={item?.title} required maxLength={1000}/></label>
     <label>Авторы<input name="authors" defaultValue={item?.authors} required maxLength={2000}/></label>
@@ -43,7 +46,7 @@ function LiteratureForm({enrollmentId,item}:{enrollmentId:string;item?:LibraryIt
     <label>Знаки с пробелами, без сносок и библиографии<input type="number" name="declaredCharacters" defaultValue={item?.declaredCharacters} min={1} max={2147483647} required/></label><label>Количество слов (необязательно)<input type="number" name="declaredWords" defaultValue={item?.declaredWords??""} min={0} max={2147483647}/></label>
     <label>{item?"Заменить PDF (необязательно)":"PDF-файл до 50 МБ"}<input type="file" name="pdf" accept="application/pdf,.pdf" required={!item&&!readyFile} disabled={!!item&&(!!item.fileLockedAt||item.pendingDefenseCount>0)} onChange={()=>{setReadyFile(null);upload.current=null;}}/></label>
     {item&&(item.fileLockedAt||item.pendingDefenseCount>0)&&<p>PDF зафиксирован зачётом или открытой защитой. Метаданные можно исправить.</p>}
-    <button className="button primary" type="submit">{busy?"Сохраняем…":item?"Сохранить новую ревизию":"Добавить материал"}</button>
+    <button className="button primary" type="submit">{busy?"Сохраняем…":item?"Сохранить новую ревизию":"Сохранить источник"}</button>
   </fieldset>{busy&&progress!==null&&<><progress value={progress} max={100} aria-label="Загрузка PDF"/><button className="button" type="button" onClick={()=>cancel.current?.abort()}>Отменить загрузку</button></>}<p role="status" aria-live="polite">{message}</p></form>;
 }
 function MaterialCard({item,enrollmentId,canEdit}:{item:LibraryItem;enrollmentId:string;canEdit:boolean}){
@@ -56,11 +59,23 @@ function MaterialCard({item,enrollmentId,canEdit}:{item:LibraryItem;enrollmentId
     {canEdit&&<button className="button" disabled={busy} onClick={async()=>{setBusy(true);setStatus("");try{await api("/api/literature","PATCH",{key:crypto.randomUUID(),id:item.id,version:item.version,archive:!item.archivedAt});router.refresh();}catch(e){setStatus((e as Error).message);}finally{setBusy(false);}}}>{item.archivedAt?"Восстановить материал":"В архив"}</button>}<p role="status">{status}</p>
   </article>;
 }
+function NewSourceForm({enrollmentId,onSaved}:{enrollmentId:string;onSaved:(message:string)=>void}){
+  const {close,setBusy}=useDialog();
+  return <LiteratureForm enrollmentId={enrollmentId} onBusyChange={setBusy} onSaved={message=>{onSaved(message);close();}}/>;
+}
+
 export function Library({data,filters}:{data:LibraryData;filters:{q:string;type:string;archived:boolean}}){
+  const [saved,setSaved]=useState("");
   const path=(page:number)=>`/library?${new URLSearchParams({enrollmentId:data.enrollmentId,q:filters.q,type:filters.type,archived:filters.archived?"1":"0",page:String(page)})}`;
-  return <><PageHeader title="Библиотека литературы" description="Научные источники и PDF по вашему исследованию. Заявленный объём подтверждает преподаватель."><h2>Материалов: {data.totals.count.toLocaleString("ru-RU")}</h2><p>{Number(data.totals.characters).toLocaleString("ru-RU")} знаков заявлено</p></PageHeader>
-    {data.canEdit&&<details className="card composer"><summary>Добавить материал</summary><LiteratureForm enrollmentId={data.enrollmentId}/></details>}
-    <form className="library-filters" autoComplete="off" action="/library"><input type="hidden" name="enrollmentId" value={data.enrollmentId}/><label>Поиск по названию и авторам<input type="search" name="q" defaultValue={filters.q} maxLength={200} placeholder="Название или автор…"/></label><label>Тип<select name="type" defaultValue={filters.type}><option value="">Все типы</option><option value="article">Статьи</option><option value="monograph">Монографии</option><option value="collection">Сборники</option></select></label><label>Состояние<select aria-label="Состояние" name="archived" defaultValue={filters.archived?"1":"0"}><option value="0">Текущие материалы</option><option value="1">Архив</option></select></label><button className="button primary">Найти</button>{(filters.q||filters.type||filters.archived)&&<a className="button" href={`/library?enrollmentId=${data.enrollmentId}`}>Сбросить</a>}</form>
+  return <><PageHeader title="Источники" description="Научные публикации и PDF по вашему исследованию."/>
+    <SourceProgress {...data.totals}/>
+    {data.canEdit&&<div className="source-actions">
+      <Dialog trigger="Добавить источник" title="Добавить источник">
+        <NewSourceForm enrollmentId={data.enrollmentId} onSaved={setSaved}/>
+      </Dialog>
+      <p role="status">{saved}</p>
+    </div>}
+    <Form key={JSON.stringify(filters)} className="library-filters" autoComplete="off" action="/library"><input type="hidden" name="enrollmentId" value={data.enrollmentId}/><label>Поиск по названию и авторам<input type="search" name="q" defaultValue={filters.q} maxLength={200} placeholder="Название или автор…"/></label><label>Тип<select name="type" defaultValue={filters.type}><option value="">Все типы</option><option value="article">Статьи</option><option value="monograph">Монографии</option><option value="collection">Сборники</option></select></label><label>Состояние<select aria-label="Состояние" name="archived" defaultValue={filters.archived?"1":"0"}><option value="0">Текущие материалы</option><option value="1">Архив</option></select></label><button className="button primary">Найти</button>{(filters.q||filters.type||filters.archived)&&<a className="button" href={`/library?enrollmentId=${data.enrollmentId}`}>Сбросить</a>}</Form>
     {!data.items.length&&<div className="card"><h2>{filters.q||filters.type||filters.archived?"Материалы не найдены":"Материалов пока нет"}</h2><p>{filters.q||filters.type||filters.archived?"Попробуйте другой запрос.":data.canEdit?"Добавьте научную работу и загрузите PDF.":"Здесь появятся материалы студента."}</p></div>}
     <div className="record-list">{data.items.map(item=><MaterialCard key={`${item.id}-${item.version}`} item={item} enrollmentId={data.enrollmentId} canEdit={data.canEdit}/>)}</div><nav className="workspace-tabs" aria-label="Страницы библиотеки">{data.page>1&&<a href={path(data.page-1)}>Предыдущая страница</a>}<span>Страница {data.page}</span>{data.hasNext&&<a href={path(data.page+1)}>Следующая страница</a>}</nav>
   </>;

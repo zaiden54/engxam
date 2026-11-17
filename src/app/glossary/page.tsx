@@ -1,17 +1,38 @@
-import {redirect} from "next/navigation";
-import Link from "next/link";
-import {z} from "zod";
-import {currentActor} from "@/modules/identity/session";
-import {glossaryPage} from "@/modules/glossary/service";
-import {getPool} from "@/lib/db/pool";
-import {Glossary} from "@/components/glossary";
-import type {GlossaryData} from "@/modules/glossary/model";
-import {AppError} from "@/lib/errors";
-import {StudyNavigation} from "@/components/study-navigation";
-export const dynamic="force-dynamic";
-export default async function Page({searchParams}:{searchParams:Promise<{enrollmentId?:string;q?:string;status?:string;page?:string}>}){
-  const params=await searchParams;const filters={q:params.q??"",status:params.status??"active"};let data:GlossaryData|undefined;let message="";
-  try{const actor=await currentActor();const id=z.uuid().safeParse(params.enrollmentId);if(!id.success)throw new AppError("NOT_FOUND","Выберите обучение в личном кабинете.");data=await glossaryPage(getPool(),actor.id,id.data,{...filters,page:Number(params.page??1)});}catch(e){if(e instanceof AppError){if(e.code==="UNAUTHENTICATED")redirect("/login");message=e.message;}else throw e;}
-  if(!data)return <section className="card"><h1>Словарь недоступен</h1><p>{message}</p><Link className="button primary" href="/account">В личный кабинет</Link></section>;
-  return <><StudyNavigation enrollmentId={data.enrollmentId} current="glossary"/><Glossary data={data} filters={filters}/></>;
+import { getPool } from "@/lib/db/pool";
+import { AppError } from "@/lib/errors";
+import { pageActor } from "@/modules/identity/page-actor";
+import { studyContext } from "@/modules/education/study-context";
+import { glossaryPage } from "@/modules/glossary/service";
+import { Glossary } from "@/components/glossary";
+import { AccessDenied } from "@/components/access-denied";
+import { NoStudy, StudySelection, StudyUnavailable } from "@/components/study-navigation";
+import { StudyShell } from "@/components/site-shell";
+
+export const dynamic = "force-dynamic";
+
+export default async function Page({ searchParams }: {
+  searchParams: Promise<{ enrollmentId?: string | string[]; q?: string; status?: string; page?: string }>;
+}) {
+  const actor = await pageActor();
+  if (!actor) return <AccessDenied/>;
+  const params = await searchParams;
+  const { choices, selected, unavailable } = await studyContext(actor.id, params.enrollmentId);
+  const filters = { q: params.q ?? "", status: params.status ?? "active" };
+  let data;
+  let denied = unavailable || actor.role === "admin";
+  if (!denied && selected) {
+    try {
+      data = await glossaryPage(getPool(), actor.id, selected.id, { ...filters, page: Number(params.page ?? 1) });
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== "NOT_FOUND") throw error;
+      denied = true;
+    }
+  }
+  return <StudyShell current="glossary" role={actor.role} enrollmentId={denied ? undefined : selected?.id}>
+    {denied ? <StudyUnavailable/> : <>
+      {!data && <h1>Словарь терминов</h1>}
+      {choices.length ? <StudySelection choices={choices} selected={selected} action="/glossary"/> : <NoStudy/>}
+      {data && <Glossary key={data.enrollmentId} data={data} filters={filters}/>}
+    </>}
+  </StudyShell>;
 }

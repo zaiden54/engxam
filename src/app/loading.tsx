@@ -1,1 +1,0 @@
-export default function Loading() { return <div role="status" aria-label="Загрузка"><div className="skeleton" /><div className="skeleton" /><span className="sr-only">Загрузка страницы…</span></div>; }

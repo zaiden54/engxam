@@ -75,10 +75,18 @@ export async function mutateTerm(pool:Pool,actorId:string,input:unknown){const p
     const result={id};await audit(c,actorId,data.operation==="archive"?(data.archive?"archiveTerm":"restoreTerm"):"saveTerm",id);await remember(c,actorId,"mutateGlossaryTerm",data.key,prior.hash,result);return result;
   });}catch(e){if((e as {code:string}).code==="23505")throw new AppError("CONFLICT","Такой термин уже существует, в том числе в архиве.");throw e;}
 }
+export async function glossaryTotals(client: PoolClient, enrollmentId: string) {
+  const { rows } = await client.query<{ total: number; drafts: number }>(
+    `SELECT count(*)::int AS total, count(*) FILTER (WHERE r.translation = '')::int AS drafts
+     FROM glossary_term t JOIN glossary_term_revision r ON r.id = t.current_revision_id
+     WHERE t.enrollment_id = $1 AND t.archived_at IS NULL`, [enrollmentId]);
+  return rows[0];
+}
+
 export async function glossaryPage(pool:Pool,actorId:string,enrollmentId:string,options:{q?:string;status?:string;page?:number}={}):Promise<GlossaryData>{return inTransaction(pool,async c=>{
   const actor=await authorizeEnrollment(c,actorId,enrollmentId);const page=Number.isSafeInteger(options.page)&&options.page!>0&&options.page!<=10000?options.page!:1;const status=["draft","ready","archived"].includes(options.status??"")?options.status!:"active";
   const items=await c.query(`SELECT t.id,t.version,t.archived_at as "archivedAt",t.created_at as "createdAt",r.term,r.translation,r.definition,r.context,r.revision_no as "revisionNo",COALESCE((SELECT json_agg(s.literature_id ORDER BY s.literature_id) FROM term_source s WHERE s.term_id=t.id),'[]') as "sourceIds" FROM glossary_term t JOIN glossary_term_revision r ON r.id=t.current_revision_id WHERE t.enrollment_id=$1 AND (t.archived_at IS NOT NULL)=($2='archived') AND ($2 NOT IN ('draft','ready') OR ($2='draft' AND r.translation='') OR ($2='ready' AND r.translation<>'')) AND ($3='' OR r.term ILIKE $3 OR r.translation ILIKE $3) ORDER BY t.normalized_term,t.id LIMIT 26 OFFSET $4`,[enrollmentId,status,options.q?`%${options.q.replace(/[%_\\]/g,"\\$&").slice(0,200)}%`:"",(page-1)*25]);
-  const counts=(await c.query("SELECT count(*)::int total,count(*) FILTER(WHERE r.translation='')::int drafts FROM glossary_term t JOIN glossary_term_revision r ON r.id=t.current_revision_id WHERE t.enrollment_id=$1 AND t.archived_at IS NULL",[enrollmentId])).rows[0];
+  const counts=await glossaryTotals(c,enrollmentId);
   const sources=(await c.query("SELECT l.id,r.title FROM literature l JOIN literature_revision r ON r.id=l.current_revision_id WHERE l.enrollment_id=$1 ORDER BY r.title,l.id",[enrollmentId])).rows;
   return {enrollmentId,canEdit:actor.role==="student",items:items.rows.slice(0,25),page,hasNext:items.rows.length>25,total:counts.total,drafts:counts.drafts,sources};
 });}

@@ -3,7 +3,7 @@ import type {Pool,PoolClient} from "pg";
 import {AppError} from "../../lib/errors";
 import {saveSchema,archiveSchema} from "./schemas";
 import {authorizeEnrollment} from "./access";
-import {inTransaction,audit} from "../files/service";
+import {inTransaction,audit} from "../../lib/db/transaction";
 async function prior(c:PoolClient,actorId:string,operation:string,key:string,input:unknown){
   const hash=createHash("sha256").update(JSON.stringify(input)).digest("hex");
   const old=(await c.query("SELECT payload_hash,result FROM idempotency_request WHERE actor_id=$1 AND operation=$2 AND key=$3",[actorId,operation,key])).rows[0];
@@ -43,11 +43,19 @@ export async function archiveLiterature(pool:Pool,actorId:string,input:unknown){
     await audit(c,actorId,data.archive?"archiveLiterature":"restoreLiterature",data.id);await remember(c,actorId,"archiveLiterature",data.key,replay.hash,row);return row;
   });
 }
+export async function literatureTotals(client: PoolClient, enrollmentId: string) {
+  const { rows } = await client.query<{ characters: string; count: number }>(
+    `SELECT COALESCE(sum(r.declared_characters), 0)::text AS characters, count(*)::int AS count
+     FROM literature l JOIN literature_revision r ON r.id = l.current_revision_id
+     WHERE l.enrollment_id = $1 AND l.archived_at IS NULL`, [enrollmentId]);
+  return rows[0];
+}
+
 export async function listLibrary(pool:Pool,actorId:string,enrollmentId:string,options:{q?:string;type?:string;archived?:boolean;page?:number}={}){
   return inTransaction(pool,async c=>{const actor=await authorizeEnrollment(c,actorId,enrollmentId);const page=Number.isSafeInteger(options.page)&&options.page!>0&&options.page!<10000?options.page!:1;
     const rows=await c.query(`SELECT l.id,l.version,l.material_type as "materialType",l.canonical_doi as doi,l.archived_at as "archivedAt",l.file_locked_at as "fileLockedAt",l.pending_defense_count as "pendingDefenseCount",r.id as "revisionId",r.revision_no as "revisionNo",r.title,r.authors,r.publication_year as "publicationYear",r.publication_source as "publicationSource",r.url,r.publication_pages as "publicationPages",r.declared_characters as "declaredCharacters",r.declared_words as "declaredWords",r.file_id as "fileId",f.page_count as "pageCount",f.original_name as "originalName",r.created_at as "createdAt" FROM literature l JOIN literature_revision r ON r.id=l.current_revision_id JOIN file_asset f ON f.id=r.file_id WHERE l.enrollment_id=$1 AND (l.archived_at IS NOT NULL)=$2 AND ($3='' OR r.title ILIKE $3 OR r.authors ILIKE $3) AND ($4='' OR l.material_type=$4) ORDER BY l.created_at DESC,l.id LIMIT 21 OFFSET $5`,[enrollmentId,!!options.archived,options.q?`%${options.q.replace(/[%_\\]/g,"\\$&").slice(0,200)}%`:"",["article","monograph","collection"].includes(options.type??"")?options.type:"",(page-1)*20]);
-    const totals=await c.query("SELECT COALESCE(sum(r.declared_characters),0)::text characters,count(*)::int count FROM literature l JOIN literature_revision r ON r.id=l.current_revision_id WHERE l.enrollment_id=$1 AND l.archived_at IS NULL",[enrollmentId]);
-    return {enrollmentId,canEdit:actor.role==="student",items:rows.rows.slice(0,20),page,hasNext:rows.rows.length>20,totals:totals.rows[0]};
+    const totals=await literatureTotals(c,enrollmentId);
+    return {enrollmentId,canEdit:actor.role==="student",items:rows.rows.slice(0,20),page,hasNext:rows.rows.length>20,totals};
   });
 }
 export async function history(pool:Pool,actorId:string,id:string){return inTransaction(pool,async c=>{

@@ -1,13 +1,23 @@
-import { redirect } from "next/navigation";
 import { workspace } from "@/modules/education/queries";
 import { Workspace } from "@/components/workspace";
-import { AppError } from "@/lib/errors";
-import { SignOut } from "@/components/sign-out";
+import { AccessDenied } from "@/components/access-denied";
+import { StudyShell } from "@/components/site-shell";
+import { pageActor } from "@/modules/identity/page-actor";
+import { studyContext } from "@/modules/education/study-context";
+
 export const dynamic = "force-dynamic";
-export default async function Account({searchParams}:{searchParams:Promise<{page?:string}>}) {
-  let data;let message="";
-  try{data=await workspace(Number((await searchParams).page??1));}
-  catch(error){if(error instanceof AppError){if(error.code==="UNAUTHENTICATED")redirect("/login");message=error.message;}else throw error;}
-  if(!data)return <section className="card"><h1>Доступ не назначен</h1><p>{message}</p><SignOut/></section>;
-  return <Workspace data={data}/>;
+
+export default async function Account({ searchParams }: {
+  searchParams: Promise<{ page?: string; enrollmentId?: string | string[] }>;
+}) {
+  const actor = await pageActor();
+  if (!actor) return <AccessDenied/>;
+  const params = await searchParams;
+  const [data, context] = await Promise.all([
+    workspace(actor, Number(params.page ?? 1)),
+    actor.role === "admin" ? null : studyContext(actor.id, params.enrollmentId),
+  ]);
+  return <StudyShell current="account" role={actor.role} enrollmentId={context?.selected?.id}>
+    <Workspace data={data} enrollmentId={context?.selected?.id}/>
+  </StudyShell>;
 }

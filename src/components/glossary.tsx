@@ -1,8 +1,10 @@
 "use client";
+import Form from "next/form";
 import {useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 import Link from "next/link";
 import {PageHeader} from "./ui/page-header";
+import {TermProgress} from "./study-progress";
 import type {GlossaryData,TermView,Preview,PreviewRow,RowInput} from "@/modules/glossary/model";
 const statusLabels:Record<PreviewRow["status"],string>={new:"Новый",draft:"Черновик",duplicate:"Дубль",archived:"В архиве",error:"Ошибка",empty:"Пусто"};
 const eligible=(r:PreviewRow)=>r.status==="new"||r.status==="draft";
@@ -34,8 +36,8 @@ function TermCard({item,data}:{item:TermView;data:GlossaryData}){
 }
 export function Glossary({data,filters}:{data:GlossaryData;filters:{q:string;status:string}}){
   const path=(page:number)=>`/glossary?${new URLSearchParams({enrollmentId:data.enrollmentId,q:filters.q,status:filters.status,page:String(page)})}`;
-  return <><PageHeader title="Словарь терминов" description="Термины из вашей литературы. Для допуска нужно 500 принятых преподавателем терминов; добавление в словарь не означает принятия."><h2>Внесено уникальных: {data.total.toLocaleString("ru-RU")}</h2><p>Без перевода: {data.drafts.toLocaleString("ru-RU")}</p></PageHeader>{data.canEdit&&<div className="creation-tools"><details className="card composer"><summary>Добавить термин</summary><TermForm data={data}/></details><details className="card composer"><summary>Добавить списком</summary><BatchForm data={data}/></details></div>}
-    <form className="library-filters" autoComplete="off" action="/glossary"><input type="hidden" name="enrollmentId" value={data.enrollmentId}/><label>Поиск по термину и переводу<input type="search" name="q" defaultValue={filters.q} maxLength={200} placeholder="Термин или перевод…"/></label><label>Состояние<select aria-label="Состояние" name="status" defaultValue={filters.status}><option value="active">Все текущие</option><option value="draft">Без перевода</option><option value="ready">С переводом</option><option value="archived">Архив</option></select></label><button className="button primary">Найти</button>{(filters.q||filters.status!=="active")&&<Link className="button" href={`/glossary?enrollmentId=${data.enrollmentId}`}>Сбросить</Link>}</form>
+  return <><PageHeader title="Словарь терминов" description="Термины из вашей литературы."/><TermProgress total={data.total} drafts={data.drafts}/>{data.canEdit&&<div className="creation-tools"><details className="card composer"><summary>Добавить термин</summary><TermForm data={data}/></details><details className="card composer"><summary>Добавить списком</summary><BatchForm data={data}/></details></div>}
+    <Form key={JSON.stringify(filters)} className="library-filters" autoComplete="off" action="/glossary"><input type="hidden" name="enrollmentId" value={data.enrollmentId}/><label>Поиск по термину и переводу<input type="search" name="q" defaultValue={filters.q} maxLength={200} placeholder="Термин или перевод…"/></label><label>Состояние<select aria-label="Состояние" name="status" defaultValue={filters.status}><option value="active">Все текущие</option><option value="draft">Без перевода</option><option value="ready">С переводом</option><option value="archived">Архив</option></select></label><button className="button primary">Найти</button>{(filters.q||filters.status!=="active")&&<Link className="button" href={`/glossary?enrollmentId=${data.enrollmentId}`}>Сбросить</Link>}</Form>
     {!data.items.length&&<section className="card"><h2>Термины не найдены</h2><p>{filters.q||filters.status!=="active"?"Измените запрос или сбросьте фильтры.":data.canEdit?"Добавьте первый термин или вставьте список.":"Здесь появится словарь студента."}</p></section>}
     <div className="record-list">{data.items.map(item=><TermCard key={`${item.id}-${item.version}`} item={item} data={data}/>)}</div><nav className="workspace-tabs" aria-label="Страницы словаря">{data.page>1&&<Link href={path(data.page-1)}>Предыдущая страница</Link>}<span>Страница {data.page}</span>{data.hasNext&&<Link href={path(data.page+1)}>Следующая страница</Link>}</nav>
   </>;
