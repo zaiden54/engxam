@@ -4,15 +4,16 @@ import {readFileSync} from "node:fs";
 import {randomUUID} from "node:crypto";
 import {PDFDocument} from "pdf-lib";
 import {blockExternalFontRequests} from "./test-fonts";
+import { expectResponsiveLayout } from "./responsive-layout";
 test("student uploads and revises PDF; assigned teacher reads; admin cannot read", { tag: "@stage02" },async({page,browser,cleanStudentMembership},testInfo)=>{
-  test.setTimeout(120000);
+  test.setTimeout(240000);
   const people=JSON.parse(readFileSync(".env.stage02-fixtures.json","utf8")) as {role:string;email:string;password:string;id:string}[];
   const person=(role:string)=>people.find(p=>p.role===role)!;
-  const login=async(p:Page,role:string)=>{await blockExternalFontRequests(p);await p.goto("https://localhost:3000/login",{waitUntil:"domcontentloaded"});await p.getByLabel("Электронная почта").fill(person(role).email);await p.getByLabel("Пароль",{exact:true}).fill(person(role).password);await p.getByRole("button",{name:"Войти",exact:true}).click();await expect(p).toHaveURL(/\/$/);};
+  const login=async(p:Page,role:string)=>{await blockExternalFontRequests(p);await p.goto("https://localhost:3000/login",{waitUntil:"domcontentloaded"});await p.getByLabel("Электронная почта").fill(person(role).email);await p.getByLabel("Пароль",{exact:true}).fill(person(role).password);await p.getByRole("button",{name:"Войти",exact:true}).click();await expect(p).toHaveURL(/\/$/, { timeout: 20000 });};
   await login(page,"admin");
   const command=async(command:unknown)=>{console.log("Library setup command",(command as {operation:string}).operation);const response=await page.request.post("/api/education",{timeout:15000,headers:{Origin:"https://localhost:3000"},data:{key:randomUUID(),command}});const data=await response.json();expect(response.ok(),JSON.stringify(data)).toBe(true);return data as {id:string};};
   const suffix=randomUUID();const period=await command({operation:"createPeriod",name:`PDF ${suffix}`,startsOn:"2026-09-01",endsOn:"2027-08-31",preparationDeadline:"2027-04-01"});const group=await command({operation:"createGroup",periodId:period.id,name:"PDF group",teacherId:person("teacher").id});const e=await command({operation:"enroll",studentId:cleanStudentMembership,groupId:group.id,specialty:"Economics",language:"en"});
-  const studentContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});const teacherContext=await browser.newContext({ignoreHTTPSErrors:true});
+  const studentContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844},hasTouch:true});const teacherContext=await browser.newContext({ignoreHTTPSErrors:true});
   try{
     const student=await studentContext.newPage();student.setDefaultTimeout(10000);await login(student,"student");console.log("Student signed in");await student.goto(`https://localhost:3000/library?enrollmentId=${e.id}`);await expect(student.getByRole("heading",{name:"Источники",exact:true})).toBeVisible();console.log("Library opened");
     const add=student.getByRole("button",{name:"Добавить источник",exact:true});await add.click();const form=student.getByRole("dialog",{name:"Добавить источник"});await expect(form).toBeVisible();
@@ -20,8 +21,13 @@ test("student uploads and revises PDF; assigned teacher reads; admin cannot read
     const pdf=await PDFDocument.create();pdf.addPage();pdf.setTitle(suffix);const bytes=Buffer.from(await pdf.save());await form.getByLabel("PDF-файл до 50 МБ").setInputFiles({name:"science.pdf",mimeType:"application/pdf",buffer:bytes});const submit=form.getByRole("button",{name:"Сохранить источник",exact:true});
     const uploads="**/api/files/uploads";
     await student.route(uploads,route=>route.fulfill({status:503,json:{message:"Загрузка временно недоступна"}}),{times:1});
-    await submit.click();await expect(form.getByRole("status")).toHaveText("Загрузка временно недоступна");
+    await submit.click();await expect(form.getByRole("alert")).toHaveText("Загрузка временно недоступна");
     await expect(form.getByLabel("Название",{exact:true})).toHaveValue(`Scientific paper ${suffix}`);
+    await student.setViewportSize({ width: 390, height: 420 });
+    for (const control of [form.getByLabel("Название", { exact: true }), form.getByRole("alert"), submit]) {
+      await control.scrollIntoViewIfNeeded();
+      await expect(control).toBeInViewport();
+    }
     const pendingUpload = new URL("/test-pending-pdf", student.url()).href;
     let releaseUpload: () => void = () => {};
     const uploadReleased = new Promise<void>(resolve => { releaseUpload = resolve; });
@@ -39,6 +45,9 @@ test("student uploads and revises PDF; assigned teacher reads; admin cannot read
       await student.keyboard.press("Escape");
       await expect(form).toBeVisible();
       const cancel = form.getByRole("button", { name: "Отменить загрузку" });
+      await cancel.scrollIntoViewIfNeeded();
+      await expect(cancel).toBeInViewport();
+      expect((await cancel.boundingBox())!.height).toBeGreaterThanOrEqual(44);
       await cancel.focus();
       await expect(cancel).toBeFocused();
       await student.keyboard.press("Enter");
@@ -47,8 +56,10 @@ test("student uploads and revises PDF; assigned teacher reads; admin cannot read
     } finally {
       releaseUpload();
     }
+    await student.setViewportSize({ width: 390, height: 844 });
     console.log("Uploading through UI");await submit.click();await expect(form).toBeHidden({timeout:45000});await expect(add).toBeFocused();await expect(student.getByRole("progressbar")).toHaveAttribute("aria-valuetext",/42.000 из 600.000/);
     const card=student.getByRole("article").filter({has:student.getByRole("heading",{name:`Scientific paper ${suffix}`,exact:true})});await expect(card).toBeVisible();const download=await card.getByRole("link",{name:"Скачать PDF"}).getAttribute("href");expect(download).toBeTruthy();
+    await expectResponsiveLayout(student);
     console.log("Downloading stored PDF");const fileResponse=await student.request.get(`https://localhost:3000${download}`,{timeout:15000});expect(fileResponse.ok()).toBe(true);expect((await fileResponse.body()).equals(bytes)).toBe(true);
     expect((await page.request.get(download!,{maxRedirects:0})).status()).toBe(404);
     console.log("Checking teacher access");const teacher=await teacherContext.newPage();teacher.setDefaultTimeout(10000);await login(teacher,"teacher");await teacher.goto(`https://localhost:3000/library?enrollmentId=${e.id}`);await expect(teacher.getByRole("heading",{name:`Scientific paper ${suffix}`,exact:true})).toBeVisible();await expect(teacher.getByRole("button",{name:"Добавить источник",exact:true})).toHaveCount(0);
@@ -64,7 +75,29 @@ test("student uploads and revises PDF; assigned teacher reads; admin cannot read
     const revised=student.getByRole("article").filter({has:student.getByRole("heading",{name:`Revised ${suffix}`,exact:true})});await revised.getByText("История ревизий",{exact:true}).click();await expect(revised.getByText(/Ревизия 1 · Scientific paper/)).toBeVisible();
     await student.screenshot({path:testInfo.outputPath("library.png"),fullPage:true});expect(await student.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await revised.getByRole("button",{name:"В архив",exact:true}).click();await expect(student.getByRole("heading",{name:`Revised ${suffix}`,exact:true})).toHaveCount(0);await expect(student.getByRole("progressbar")).toHaveAttribute("aria-valuenow","0");
-    await student.getByLabel("Состояние",{exact:true}).selectOption("1");await student.getByRole("button",{name:"Найти",exact:true}).click();await expect(student.getByRole("heading",{name:`Revised ${suffix}`,exact:true})).toBeVisible();
+    const search = student.getByRole("search");
+    const query = search.getByRole("searchbox");
+    const filters = search.getByRole("button", { name: "Фильтры", exact: true });
+    await query.fill("no matching source");
+    await search.getByRole("button", { name: "Найти" }).click();
+    await expect(student.getByRole("heading", { name: "Материалы не найдены" })).toBeVisible();
+    await query.fill(`Revised ${suffix}`);
+    await filters.click();
+    await search.getByLabel("Состояние", { exact: true }).selectOption("1");
+    await search.getByLabel("Тип", { exact: true }).selectOption("article");
+    await search.getByRole("button", { name: "Применить фильтры" }).click();
+    await expect(revised).toBeVisible();
+    await expect(filters).toHaveAttribute("aria-expanded", "false");
+    await expect(search.getByText("Статьи · Архив", { exact: false })).toBeVisible();
+    const secondPage = new URL(student.url());
+    secondPage.searchParams.set("page", "2");
+    await student.goto(secondPage.href);
+    await student.getByRole("link", { name: "Предыдущая страница" }).click();
+    await expect(revised).toBeVisible();
+    expect(new URL(student.url()).searchParams.get("enrollmentId")).toBe(e.id);
+    await search.getByRole("link", { name: "Сбросить" }).click();
+    await expect(query).toHaveValue("");
+    expect(new URL(student.url()).searchParams.get("enrollmentId")).toBe(e.id);
   }catch(error){console.error("Library browser scenario failed",error instanceof Error?error.message:"unknown error");throw error;}
   finally{await Promise.race([Promise.all([studentContext.close().catch(()=>{}),teacherContext.close().catch(()=>{})]),new Promise(resolve=>setTimeout(resolve,5000))]);}
 });

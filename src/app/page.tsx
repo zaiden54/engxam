@@ -40,15 +40,21 @@ export default async function Home({ searchParams }: {
   return <StudyShell current="home" role={actor.role} enrollmentId={selected?.id}>
     {unavailable ? <StudyUnavailable/> : <>
       <PageHeader title="Главная" />
-      {actor.role === "teacher" && selected && <Button variant="outline" asChild>
-        <Link href={`/?groupId=${selected.groupId}`}>К группе</Link>
-      </Button>}
-      {selected ? <StudyContextLabel selected={selected}/> : <NoStudy/>}
+      {selected ? <div className="dashboard-context record-surface">
+        <StudyContextLabel selected={selected}/>
+        {actor.role === "teacher" && <Button variant="outline" asChild>
+          <Link href={`/?groupId=${selected.groupId}`}>К группе</Link>
+        </Button>}
+      </div> : <NoStudy/>}
       {selected && summary && <div className="dashboard-grid">
-        <article><SourceProgress {...summary.sources}/>
-          <Button asChild variant="outline"><Link href={studyHref("library", selected.id)}>Открыть источники</Link></Button></article>
-        <article><TermProgress {...summary.terms}/>
-          <Button asChild variant="outline"><Link href={studyHref("glossary", selected.id)}>Открыть словарь</Link></Button></article>
+        <article className="record-surface">
+          <SourceProgress {...summary.sources} title="Источники"/>
+          <Button asChild><Link href={studyHref("library", selected.id)}>Открыть источники</Link></Button>
+        </article>
+        <article className="record-surface">
+          <TermProgress {...summary.terms} title="Словарь"/>
+          <Button asChild><Link href={studyHref("glossary", selected.id)}>Открыть словарь</Link></Button>
+        </article>
       </div>}
     </>}
   </StudyShell>;

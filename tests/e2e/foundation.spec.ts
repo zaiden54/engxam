@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { blockExternalFontRequests } from "./test-fonts";
+import { expectResponsiveLayout } from "./responsive-layout";
 
 test.beforeEach(async ({ page }) => {
   // Functional checks use the supported font fallback when the CDN is unavailable.
@@ -22,6 +23,12 @@ test("keyboard skip link reaches main", async ({ page, isMobile }) => {
   await page.goto("/"); await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Перейти к содержимому" })).toBeFocused();
   await page.keyboard.press("Enter"); await expect(page.locator("main")).toBeFocused();
+});
+
+test("login fits both themes across mobile and navigation breakpoints", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Вход в кабинет" })).toBeVisible();
+  await expectResponsiveLayout(page);
 });
 
 test("missing page provides a keyboard-accessible recovery action", async ({ page }) => {
@@ -112,8 +119,8 @@ test("page and dialog follow system and explicit themes", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Проверка диалога" });
   const body = page.locator("body");
   const expectTheme = async (theme: "light" | "dark") => {
-    await expect(body).toHaveCSS("background-color", theme === "light" ? "rgb(246, 244, 243)" : "rgb(25, 23, 25)");
-    await expect(dialog).toHaveCSS("background-color", theme === "light" ? "rgb(255, 255, 255)" : "rgb(35, 31, 34)");
+    await expect(body).toHaveCSS("background-color", theme === "light" ? "rgb(246, 245, 249)" : "rgb(37, 38, 47)");
+    await expect(dialog).toHaveCSS("background-color", theme === "light" ? "rgb(255, 255, 255)" : "rgb(57, 59, 72)");
   };
 
   await trigger.click();

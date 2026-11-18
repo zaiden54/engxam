@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { ThemeProvider } from "@/components/theme";
 import "./globals.css";
@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   title: "Engxam — подготовка к экзамену",
   description: "Источники и словарь для подготовки к кандидатскому экзамену",
 };
+
+export const viewport: Viewport = { viewportFit: "cover" };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const value = (await cookies()).get("engxam-theme")?.value;

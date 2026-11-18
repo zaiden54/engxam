@@ -3,6 +3,7 @@ import { test } from "./study-fixtures";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { blockExternalFontRequests } from "./test-fonts";
+import { expectResponsiveLayout } from "./responsive-layout";
 type Person={role:string;email:string;password:string;id:string};
 
 test("preparation progress shows the actual volume and caps the indicator", async ({ page }) => {
@@ -17,12 +18,34 @@ test("preparation progress shows the actual volume and caps the indicator", asyn
 });
 
 test("administration, assigned teacher, student profile and deactivation", { tag: "@stage02" },async({browser,page,cleanStudentMembership},testInfo)=>{
-  test.setTimeout(120000);page.setDefaultTimeout(15000);
+  test.setTimeout(240000);page.setDefaultTimeout(15000);
   const fixtures=JSON.parse(readFileSync(".env.stage02-fixtures.json","utf8")) as Person[];
   const person=(role:string)=>fixtures.find(p=>p.role===role)!;
   const contexts:BrowserContext[]=[];
-  const login=async(p:Page,role:string)=>{p.setDefaultTimeout(15000);await blockExternalFontRequests(p);await p.goto("https://localhost:3000/login",{waitUntil:"domcontentloaded"});await p.getByLabel("Электронная почта").fill(person(role).email);await p.getByLabel("Пароль",{exact:true}).fill(person(role).password);await p.getByRole("button",{name:"Войти",exact:true}).click();await expect(p).toHaveURL(/\/$/);};
-  await login(page,"admin");await expect(page.getByRole("progressbar")).toHaveCount(0);await page.getByRole("link",{name:"Управление",exact:true}).click();await expect(page.getByRole("heading",{name:"Управление обучением"})).toBeVisible();
+  const login=async(p:Page,role:string)=>{p.setDefaultTimeout(15000);await blockExternalFontRequests(p);await p.goto("https://localhost:3000/login",{waitUntil:"domcontentloaded"});await p.getByLabel("Электронная почта").fill(person(role).email);await p.getByLabel("Пароль",{exact:true}).fill(person(role).password);await p.getByRole("button",{name:"Войти",exact:true}).click();await expect(p).toHaveURL(/\/$/, { timeout: 20000 });};
+  await login(page,"admin");
+  await page.setViewportSize({ width: 768, height: 800 });
+  const menu = page.getByRole("button", { name: "Меню", exact: true });
+  const sections = page.getByRole("navigation", { name: "Разделы кабинета" });
+  await expect(sections).toHaveCount(0);
+  await expect(menu).toBeEnabled();
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Tab");
+  await expect(sections.getByRole("link", { name: "Главная" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeFocused();
+  await expect(sections).toHaveCount(0);
+  await menu.click();
+  await sections.getByRole("link", { name: "Управление" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await expectResponsiveLayout(page);
+  await page.goto("/");
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect(sections.getByRole("link", { name: "Главная" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("progressbar")).toHaveCount(0);await page.getByRole("link",{name:"Управление",exact:true}).click();await expect(page.getByRole("heading",{name:"Управление обучением"})).toBeVisible();
   const command=async(input:unknown)=>{const response=await page.request.post("/api/education",{headers:{Origin:"https://localhost:3000"},data:{key:randomUUID(),command:input}});const result=await response.json();expect(response.ok(),JSON.stringify(result)).toBeTruthy();return result as {id:string};};
   const suffix=randomUUID().slice(0,8);
   const newTeacherEmail = `teacher-${suffix}@example.invalid`;
@@ -37,13 +60,14 @@ test("administration, assigned teacher, student profile and deactivation", { tag
   const teacher2 = users.find(user => user.email === newTeacherEmail)!;
   expect(teacher2).toBeDefined();
   const period=await command({operation:"createPeriod",name:`Поток ${suffix}`,startsOn:"2026-09-01",endsOn:"2027-08-31",preparationDeadline:"2027-04-01"});
-  const group=await command({operation:"createGroup",periodId:period.id,name:`Группа ${suffix}`,teacherId:person("teacher").id});
+  const groupName = `Группа ${suffix} · Междисциплинарная программа исследований в области экономики и государственного управления`;
+  const group=await command({operation:"createGroup",periodId:period.id,name:groupName,teacherId:person("teacher").id});
   const nextPeriod = await command({ operation: "createPeriod", name: `Другой поток ${suffix}`, startsOn: "2026-09-01", endsOn: "2027-08-31", preparationDeadline: "2027-04-01" });
   const economics = await command({ operation: "createGroup", periodId: nextPeriod.id, name: `Экономика ${suffix}`, teacherId: person("teacher").id });
   const systems = await command({ operation: "createGroup", periodId: period.id, name: `Системный анализ ${suffix}` });
   await command({ operation: "setGroupTeacher", id: systems.id, version: 1, teacherId: person("teacher").id });
   const studentId=cleanStudentMembership;
-  const studentContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});contexts.push(studentContext);
+  const studentContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844},hasTouch:true});contexts.push(studentContext);
   const studentPage=await studentContext.newPage();
   await login(studentPage,"student");
   await expect(studentPage.getByRole("heading", { name: "Обучение пока не назначено" })).toBeVisible();
@@ -79,6 +103,50 @@ test("administration, assigned teacher, student profile and deactivation", { tag
     }
   };
   try{
+    await studentPage.goto("https://localhost:3000/");
+    await expect(studentPage.getByRole("progressbar")).toHaveCount(2);
+    await expectResponsiveLayout(studentPage);
+    const bottomNav = studentPage.getByRole("navigation", { name: "Разделы кабинета" });
+    await expect(bottomNav.getByRole("link", { name: "Главная" })).toHaveAttribute("aria-current", "page");
+    await studentPage.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    const lastAction = studentPage.getByRole("link", { name: "Открыть словарь" });
+    await lastAction.focus();
+    await expect.poll(async () => {
+      const action = await lastAction.boundingBox();
+      const nav = await bottomNav.boundingBox();
+      return !!action && !!nav && action.y + action.height <= nav.y;
+    }).toBe(true);
+    await studentPage.evaluate(() => { document.documentElement.style.fontSize = ""; });
+    const context = studentPage.getByRole("region", { name: "Учебное назначение" });
+    const openSources = studentPage.getByRole("link", { name: "Открыть источники" });
+    for (const width of [360, 390]) {
+      await studentPage.setViewportSize({ width, height: 844 });
+      const [assignment, sources, glossary] = await Promise.all([
+        context.boundingBox(),
+        studentPage.getByRole("heading", { name: "Источники", exact: true }).boundingBox(),
+        studentPage.getByRole("heading", { name: "Словарь", exact: true }).boundingBox(),
+      ]);
+      expect(assignment!.y + assignment!.height).toBeLessThan(sources!.y);
+      expect(sources!.y).toBeLessThan(glossary!.y);
+      expect(sources!.x).toBe(glossary!.x);
+      expect(await context.getByText(groupName, { exact: false }).evaluate(element => {
+        const text = document.createRange();
+        text.selectNodeContents(element);
+        return text.getClientRects().length;
+      })).toBeGreaterThan(1);
+      expect(await studentPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    }
+    await openSources.focus();
+    await studentPage.keyboard.press("Tab");
+    await expect(lastAction).toBeFocused();
+    await openSources.tap();
+    await expect(studentPage).toHaveURL(new RegExp(`/library\\?enrollmentId=${enrollment.id}$`));
+    await expect(context).toContainText(`Группа ${suffix}`);
+    await bottomNav.getByRole("link", { name: "Профиль" }).tap();
+    await expect(studentPage.getByRole("link", { name: "Профиль", exact: true })).toHaveAttribute("aria-current", "page");
+    await expectResponsiveLayout(studentPage);
+    await expect(studentPage.getByRole("navigation", { name: "Разделы кабинета" }).getByRole("link", { name: "Источники" })).toHaveAttribute("href", `/library?enrollmentId=${enrollment.id}`);
+    const article=await findRecord(studentPage);await article.getByLabel("Тема диссертации").fill(`Тема ${suffix}`);await article.getByLabel("Научный руководитель").fill("Научный руководитель");await article.getByRole("button",{name:"Сохранить",exact:true}).click();await expect(article.getByRole("status")).toHaveText("Сохранено");
     const teacherContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});contexts.push(teacherContext);const teacherPage=await teacherContext.newPage();await login(teacherPage,"teacher");
     const groups = teacherPage.getByRole("list", { name: "Мои группы" });
     for (const member of [group, economics, systems]) await expect(groups.locator(`a[href="/?groupId=${member.id}"]`)).toBeVisible();
@@ -90,14 +158,19 @@ test("administration, assigned teacher, student profile and deactivation", { tag
     await expect(teacherPage.getByRole("progressbar")).toHaveCount(2);
     await teacherPage.getByRole("navigation").getByRole("link", { name: "Источники" }).click();
     await expect(teacherPage.getByRole("navigation").getByRole("link", { name: "Главная" })).toHaveAttribute("href", `/?enrollmentId=${enrollment.id}`);
-    await teacherPage.getByRole("link",{name:"Мои студенты",exact:true}).click();await expect(teacherPage.getByRole("heading",{name:"Мои студенты"})).toBeVisible();
+    await teacherPage.getByRole("navigation").getByRole("link", { name: "Главная" }).press("Enter");
+    await teacherPage.getByRole("link", { name: "К группе" }).click();
+    await expect(teacherPage).toHaveURL(new RegExp(`groupId=${group.id}$`));
+    await teacherPage.locator(`a[href="/?enrollmentId=${enrollment.id}"]`).click();
+    await expect(teacherPage).toHaveURL(new RegExp(`enrollmentId=${enrollment.id}$`));
+    await expect(teacherPage.getByRole("progressbar")).toHaveCount(2);
+    const teacherNav = teacherPage.getByRole("navigation", { name: "Разделы кабинета" });
+    await expect(teacherNav).toHaveCount(1);
+    await teacherNav.getByRole("link", { name: "Мои студенты", exact: true }).click();
+    await expect(teacherPage.getByRole("heading", { name: "Мои студенты" })).toBeVisible();
     const teacherRecord = await findRecord(teacherPage);
     await expect(teacherRecord.getByRole("link", { name: "Источники" })).toHaveAttribute("href", `/library?enrollmentId=${enrollment.id}`);
     await expect(teacherRecord.getByLabel("Тема диссертации")).toHaveCount(0);
-    await studentPage.goto("https://localhost:3000/");await expect(studentPage.getByRole("progressbar")).toHaveCount(2);await studentPage.getByRole("link",{name:"Профиль",exact:true}).click();
-    await expect(studentPage.getByRole("link", { name: "Профиль", exact: true })).toHaveAttribute("aria-current", "page");
-    await expect(studentPage.getByRole("navigation", { name: "Разделы кабинета" }).getByRole("link", { name: "Источники" })).toHaveAttribute("href", `/library?enrollmentId=${enrollment.id}`);
-    const article=await findRecord(studentPage);await article.getByLabel("Тема диссертации").fill(`Тема ${suffix}`);await article.getByLabel("Научный руководитель").fill("Научный руководитель");await article.getByRole("button",{name:"Сохранить",exact:true}).click();await expect(article.getByRole("status")).toHaveText("Сохранено");
     const forged=await studentPage.request.post("https://localhost:3000/api/education",{headers:{Origin:"https://localhost:3000"},data:{key:randomUUID(),command:{operation:"createGroup",periodId:period.id,name:"Forbidden"}}});expect(forged.status()).toBe(403);
     const current=await directoryEntry(page);
     expect(current).toBeDefined();
@@ -125,7 +198,5 @@ test("administration, assigned teacher, student profile and deactivation", { tag
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }finally{
     for(const context of contexts)await context.close();
-    const state=await(await page.request.get("/api/education")).json();const user=state.users?.find((u:{id:string})=>u.id===studentId);
-    if(user&&!user.active)await command({operation:"updateUser",id:studentId,version:user.version,fullName:user.fullName,role:"student",active:true});
   }
 });
