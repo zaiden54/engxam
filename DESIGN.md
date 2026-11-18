@@ -36,8 +36,9 @@ Use status messages for routine updates and alerts for errors. Keep form values 
 | Route or state | Roles | Shared components in use |
 | --- | --- | --- |
 | `/login`, `/password` | Guest | Guest panel, buttons, labeled inputs, errors and status |
-| Study header and enrollment picker | Student, teacher, administrator | Role-specific links, theme switch and sign-out; Native Select for available enrollments |
-| `/` | Student, teacher | Selected enrollment, accessible source and glossary progress, links to preparation sections, empty and unavailable states |
+| Study header | Student, teacher, administrator | Role-specific links, theme switch and sign-out |
+| `/` | Student | Current group, accessible source and glossary progress, links to preparation sections |
+| `/` | Teacher | Group directory, student list and selected student's progress, with empty and unavailable states |
 | `/` | Administrator | Home heading and management action |
 | `/library` | Student, assigned teacher | Filters, history, pagination, progress and empty states; student-only source dialog, PDF operations, revision and archive actions |
 | `/glossary` | Student, assigned teacher | Filters, context disclosures, pagination, progress and empty states; student-only entry and revision forms, batch preview and archive actions |

@@ -18,6 +18,21 @@ async function changed(client:PoolClient, query:string, params:unknown[]) {
   if (!result.rowCount) throw new AppError("CONFLICT","Запись изменилась. Обновите страницу.");
   return result.rows[0]?.id as string;
 }
+async function requireTeacher(client: PoolClient, id: string) {
+  const result = await client.query("SELECT 1 FROM app_user WHERE id=$1 AND role='teacher' AND active", [id]);
+  if (!result.rowCount) throw new AppError("CONFLICT", "Преподаватель недоступен.");
+}
+
+async function targetPeriod(client: PoolClient, groupId: string): Promise<string> {
+  const result = await client.query(`
+    SELECT g.period_id FROM academic_group g
+    JOIN academic_period p ON p.id=g.period_id AND NOT p.archived
+    JOIN app_user t ON t.id=g.teacher_id AND t.active AND t.role='teacher'
+    WHERE g.id=$1
+  `, [groupId]);
+  if (!result.rowCount) throw new AppError("CONFLICT", "Выберите группу доступного потока с действующим преподавателем.");
+  return result.rows[0].period_id;
+}
 async function execute(client:PoolClient, actor:Actor, command:Command, identities:IdentityAdmin) {
   if (command.operation !== "updateProfile") requireRole(actor,"admin");
   switch(command.operation) {
@@ -35,7 +50,7 @@ async function execute(client:PoolClient, actor:Actor, command:Command, identiti
       if(old.version!==command.version) throw new AppError("CONFLICT","Запись изменилась.");
       if(actor.id===command.id && (!command.active || command.role!=="admin")) throw new AppError("CONFLICT","Нельзя отключить себя или снять собственные права администратора.");
       if(old.role!==command.role) {
-        const linked = await client.query("SELECT 1 FROM enrollment WHERE student_id=$1 OR teacher_id=$1 LIMIT 1",[command.id]);
+        const linked = await client.query("SELECT 1 FROM enrollment WHERE student_id=$1 OR teacher_id=$1 UNION ALL SELECT 1 FROM academic_group WHERE teacher_id=$1 LIMIT 1",[command.id]);
         if(linked.rowCount) throw new AppError("CONFLICT","Сначала измените учебные назначения. Роль участника с историей обучения менять нельзя.");
         await client.query("DELETE FROM student_profile WHERE user_id=$1",[command.id]); await client.query("DELETE FROM teacher_profile WHERE user_id=$1",[command.id]);
         if(command.role!=="admin") await client.query(`INSERT INTO ${command.role==="student"?"student_profile":"teacher_profile"}(user_id) VALUES($1)`,[command.id]);
@@ -49,23 +64,32 @@ async function execute(client:PoolClient, actor:Actor, command:Command, identiti
     case "createGroup": {
       const period = await client.query("SELECT 1 FROM academic_period WHERE id=$1 AND NOT archived",[command.periodId]);
       if(!period.rowCount) throw new AppError("CONFLICT","Поток недоступен.");
-      return changed(client,"INSERT INTO academic_group(period_id,name) VALUES($1,$2) RETURNING id",[command.periodId,command.name]);
+      if (command.teacherId) await requireTeacher(client, command.teacherId);
+      return changed(client,"INSERT INTO academic_group(period_id,name,teacher_id) VALUES($1,$2,$3) RETURNING id",[command.periodId,command.name,command.teacherId ?? null]);
     }
     case "updateGroup": return changed(client,"UPDATE academic_group SET name=$1,version=version+1,updated_at=now() WHERE id=$2 AND version=$3 RETURNING id",[command.name,command.id,command.version]);
+    case "setGroupTeacher": {
+      await requireTeacher(client, command.teacherId);
+      return changed(client,"UPDATE academic_group SET teacher_id=$1,version=version+1,updated_at=now() WHERE id=$2 AND version=$3 RETURNING id",[command.teacherId,command.id,command.version]);
+    }
     case "enroll": {
-      const valid = await client.query("SELECT g.period_id FROM academic_group g JOIN academic_period p ON p.id=g.period_id WHERE g.id=$1 AND NOT p.archived",[command.groupId]);
-      const people = await client.query("SELECT id,role FROM app_user WHERE id=ANY($1::uuid[]) AND active",[[command.studentId,command.teacherId]]);
-      if(!valid.rowCount || !people.rows.some(p=>p.id===command.studentId&&p.role==="student") || !people.rows.some(p=>p.id===command.teacherId&&p.role==="teacher")) throw new AppError("CONFLICT","Проверьте группу и активных участников.");
-      return changed(client,"INSERT INTO enrollment(student_id,teacher_id,group_id,period_id,specialty,language) VALUES($1,$2,$3,$4,$5,$6) RETURNING id",[command.studentId,command.teacherId,command.groupId,valid.rows[0].period_id,command.specialty,command.language]);
+      const periodId = await targetPeriod(client, command.groupId);
+      const student = await client.query("SELECT 1 FROM app_user WHERE id=$1 AND role='student' AND active", [command.studentId]);
+      if (!student.rowCount) throw new AppError("CONFLICT", "Студент недоступен.");
+      const result = await client.query(`
+        INSERT INTO enrollment(student_id,group_id,period_id,specialty,language)
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT (student_id) WHERE current DO NOTHING RETURNING id
+      `, [command.studentId,command.groupId,periodId,command.specialty,command.language]);
+      if (!result.rowCount) throw new AppError("CONFLICT", "Студент уже зачислен. Для смены группы используйте перевод.");
+      return result.rows[0].id as string;
     }
     case "assign": {
-      const valid = await client.query("SELECT 1 FROM app_user WHERE id=$1 AND role='teacher' AND active",[command.teacherId]);
-      if(!valid.rowCount) throw new AppError("CONFLICT","Преподаватель недоступен.");
-      return changed(client,"UPDATE enrollment e SET teacher_id=$1,group_id=$2,version=e.version+1,updated_at=now() FROM academic_group g WHERE e.id=$3 AND e.version=$4 AND g.id=$2 AND g.period_id=e.period_id RETURNING e.id",[command.teacherId,command.groupId,command.id,command.version]);
+      const periodId = await targetPeriod(client, command.groupId);
+      return changed(client,"UPDATE enrollment SET group_id=$1,period_id=$2,version=version+1,updated_at=now() WHERE id=$3 AND version=$4 AND current RETURNING id",[command.groupId,periodId,command.id,command.version]);
     }
     case "updateProfile": {
       if(actor.role!=="student") throw new AppError("FORBIDDEN","Редактирование доступно студенту.");
-      return changed(client,"UPDATE enrollment SET dissertation_topic=$1,supervisor_name=$2,version=version+1,updated_at=now() WHERE id=$3 AND student_id=$4 AND version=$5 RETURNING id",[command.dissertationTopic,command.supervisorName,command.id,actor.id,command.version]);
+      return changed(client,"UPDATE enrollment SET dissertation_topic=$1,supervisor_name=$2,version=version+1,updated_at=now() WHERE id=$3 AND student_id=$4 AND version=$5 AND current RETURNING id",[command.dissertationTopic,command.supervisorName,command.id,actor.id,command.version]);
     }
   }
 }

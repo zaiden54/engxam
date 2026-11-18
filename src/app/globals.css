@@ -626,22 +626,26 @@
     gap: 12px 28px;
     margin-bottom: 20px;
   }
-  .study-context p, .study-context label {
+  .study-context p {
     overflow-wrap: anywhere;
   }
   .study-context p span {
     display: block;
     color: var(--muted-foreground);
   }
-  .study-picker {
+  .group-directory-link {
     display: flex;
-    align-items: end;
     flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
+    align-items: center;
+    gap: 4px 16px;
+    min-height: 44px;
+    overflow-wrap: anywhere;
   }
-  .study-picker select {
-    display: block;
+  .group-directory-link:hover {
+    background: var(--accent);
+  }
+  .group-directory-link span {
+    color: var(--muted-foreground);
   }
   .source-actions {
     margin-bottom: 16px;

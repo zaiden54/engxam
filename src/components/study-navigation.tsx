@@ -1,28 +1,39 @@
 import Link from "next/link";
 import type { StudyChoice } from "@/modules/education/study-selection";
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { EmptyState } from "@/components/ui/states";
+import type { teacherGroups } from "@/modules/education/study-context";
+import { studyHref } from "./site-shell";
 
-export function StudySelection({ choices, selected, action }: {
-  choices: StudyChoice[]; selected?: StudyChoice; action: string;
-}) {
+export function StudyContextLabel({ selected }: { selected: StudyChoice }) {
   return <section className="study-context" aria-label="Учебное назначение">
-    {selected && <p><strong>{selected.student}</strong><span>{selected.group} · {selected.period}</span></p>}
-    {choices.length > 1 && <form action={action} className="study-picker">
-      <Field>
-        <FieldLabel htmlFor="study-enrollment">Учебное назначение</FieldLabel>
-        <NativeSelect id="study-enrollment" name="enrollmentId" defaultValue={selected?.id ?? ""} required>
-          <NativeSelectOption value="" disabled>Выберите назначение</NativeSelectOption>
-          {choices.map(choice => <NativeSelectOption key={choice.id} value={choice.id}>
-            {choice.student} · {choice.group} · {choice.period}
-          </NativeSelectOption>)}
-        </NativeSelect>
-      </Field>
-      <Button type="submit" variant="outline">Открыть</Button>
-    </form>}
+    <p><strong>{selected.student}</strong><span>{selected.group} · {selected.period}</span></p>
   </section>;
+}
+
+export function TeacherGroups({ groups, selected, unavailable }: Awaited<ReturnType<typeof teacherGroups>>) {
+  if (unavailable) return <EmptyState title="Группа недоступна">
+    <Button variant="outline" asChild><Link href="/">К моим группам</Link></Button>
+  </EmptyState>;
+  if (!groups.length) return <EmptyState title="Группы пока не назначены">
+    Группы появятся после назначения администратором.
+  </EmptyState>;
+  if (selected) return <section aria-labelledby="group-students">
+    <Button variant="outline" asChild><Link href="/">Все группы</Link></Button>
+    <h2 id="group-students">{selected.name} · {selected.period}</h2>
+    {selected.students.length ? <ul className="record-list">
+      {selected.students.map(student => <li key={student.id}>
+        <Link className="record-surface group-directory-link" href={studyHref("home", student.id)}>{student.name}</Link>
+      </li>)}
+    </ul> : <EmptyState title="В группе пока нет студентов">Студенты появятся после зачисления.</EmptyState>}
+  </section>;
+  return <ul className="record-list" aria-label="Мои группы">
+    {groups.map(group => <li key={group.id}>
+      <Link className="record-surface group-directory-link" href={`/?groupId=${group.id}`}>
+        <strong>{group.name}</strong><span>{group.period}</span>
+      </Link>
+    </li>)}
+  </ul>;
 }
 
 export function StudyUnavailable() {
@@ -33,4 +44,10 @@ export function StudyUnavailable() {
 
 export function NoStudy() {
   return <EmptyState title="Обучение пока не назначено">Учебное назначение появится после настройки администратором.</EmptyState>;
+}
+
+export function SelectGroup() {
+  return <EmptyState title="Выберите студента">
+    <Button variant="outline" asChild><Link href="/">Открыть мои группы</Link></Button>
+  </EmptyState>;
 }

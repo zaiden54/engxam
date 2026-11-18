@@ -4,6 +4,7 @@ import { AccessDenied } from "@/components/access-denied";
 import { StudyShell } from "@/components/site-shell";
 import { pageActor } from "@/modules/identity/page-actor";
 import { studyContext } from "@/modules/education/study-context";
+import { StudyUnavailable } from "@/components/study-navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,6 @@ export default async function Account({ searchParams }: {
     actor.role === "admin" ? null : studyContext(actor.id, params.enrollmentId),
   ]);
   return <StudyShell current="account" role={actor.role} enrollmentId={context?.selected?.id}>
-    <Workspace data={data} enrollmentId={context?.selected?.id}/>
+    {context?.unavailable ? <StudyUnavailable/> : <Workspace data={data} enrollmentId={context?.selected?.id}/>}
   </StudyShell>;
 }

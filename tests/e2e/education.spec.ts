@@ -1,4 +1,5 @@
-import { test,expect,type Page,type BrowserContext } from "@playwright/test";
+import {expect,type Page,type BrowserContext } from "@playwright/test";
+import { test } from "./study-fixtures";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { blockExternalFontRequests } from "./test-fonts";
@@ -15,8 +16,8 @@ test("preparation progress shows the actual volume and caps the indicator", asyn
   await expect(page.getByText("Для зачёта объём подтверждает преподаватель.", { exact: false })).toHaveCount(2);
 });
 
-test("administration, assigned teacher, student profile and deactivation",async({browser,page},testInfo)=>{
-  test.skip(process.env.E2E_STAGE02!=="1","Requires isolated stage02 branch fixtures");test.setTimeout(120000);page.setDefaultTimeout(15000);
+test("administration, assigned teacher, student profile and deactivation", { tag: "@stage02" },async({browser,page,cleanStudentMembership},testInfo)=>{
+  test.setTimeout(120000);page.setDefaultTimeout(15000);
   const fixtures=JSON.parse(readFileSync(".env.stage02-fixtures.json","utf8")) as Person[];
   const person=(role:string)=>fixtures.find(p=>p.role===role)!;
   const contexts:BrowserContext[]=[];
@@ -36,9 +37,21 @@ test("administration, assigned teacher, student profile and deactivation",async(
   const teacher2 = users.find(user => user.email === newTeacherEmail)!;
   expect(teacher2).toBeDefined();
   const period=await command({operation:"createPeriod",name:`Поток ${suffix}`,startsOn:"2026-09-01",endsOn:"2027-08-31",preparationDeadline:"2027-04-01"});
-  const group=await command({operation:"createGroup",periodId:period.id,name:`Группа ${suffix}`});
-  const studentId=person("student").id;
-  const enrollment=await command({operation:"enroll",studentId,teacherId:person("teacher").id,groupId:group.id,specialty:"Экономика",language:"en"});
+  const group=await command({operation:"createGroup",periodId:period.id,name:`Группа ${suffix}`,teacherId:person("teacher").id});
+  const nextPeriod = await command({ operation: "createPeriod", name: `Другой поток ${suffix}`, startsOn: "2026-09-01", endsOn: "2027-08-31", preparationDeadline: "2027-04-01" });
+  const economics = await command({ operation: "createGroup", periodId: nextPeriod.id, name: `Экономика ${suffix}`, teacherId: person("teacher").id });
+  const systems = await command({ operation: "createGroup", periodId: period.id, name: `Системный анализ ${suffix}` });
+  await command({ operation: "setGroupTeacher", id: systems.id, version: 1, teacherId: person("teacher").id });
+  const studentId=cleanStudentMembership;
+  const studentContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});contexts.push(studentContext);
+  const studentPage=await studentContext.newPage();
+  await login(studentPage,"student");
+  await expect(studentPage.getByRole("heading", { name: "Обучение пока не назначено" })).toBeVisible();
+  const enrollment=await command({operation:"enroll",studentId,groupId:group.id,specialty:"Экономика",language:"en"});
+  const duplicate = await page.request.post("/api/education", { headers: { Origin: "https://localhost:3000" }, data: {
+    key: randomUUID(), command: { operation: "enroll", studentId, groupId: economics.id, specialty: "Экономика", language: "en" },
+  } });
+  expect(duplicate.status()).toBe(409);
   const findRecord = async (p: Page) => {
     const record = p.getByRole("article").filter({ hasText: `Группа ${suffix}` });
     const pagination = p.getByRole("navigation", { name: "Страницы учебных назначений" });
@@ -66,18 +79,33 @@ test("administration, assigned teacher, student profile and deactivation",async(
     }
   };
   try{
-    const teacherContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});contexts.push(teacherContext);const teacherPage=await teacherContext.newPage();await login(teacherPage,"teacher");await teacherPage.getByRole("link",{name:"Мои студенты",exact:true}).click();await expect(teacherPage.getByRole("heading",{name:"Мои студенты"})).toBeVisible();
+    const teacherContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});contexts.push(teacherContext);const teacherPage=await teacherContext.newPage();await login(teacherPage,"teacher");
+    const groups = teacherPage.getByRole("list", { name: "Мои группы" });
+    for (const member of [group, economics, systems]) await expect(groups.locator(`a[href="/?groupId=${member.id}"]`)).toBeVisible();
+    await groups.getByRole("link", { name: new RegExp(`Системный анализ ${suffix}`) }).click();
+    await expect(teacherPage.getByRole("heading", { name: "В группе пока нет студентов" })).toBeVisible();
+    await teacherPage.getByRole("link", { name: "Все группы" }).click();
+    await groups.getByRole("link", { name: new RegExp(`Группа ${suffix}`) }).click();
+    await teacherPage.locator(`a[href="/?enrollmentId=${enrollment.id}"]`).click();
+    await expect(teacherPage.getByRole("progressbar")).toHaveCount(2);
+    await teacherPage.getByRole("navigation").getByRole("link", { name: "Источники" }).click();
+    await expect(teacherPage.getByRole("navigation").getByRole("link", { name: "Главная" })).toHaveAttribute("href", `/?enrollmentId=${enrollment.id}`);
+    await teacherPage.getByRole("link",{name:"Мои студенты",exact:true}).click();await expect(teacherPage.getByRole("heading",{name:"Мои студенты"})).toBeVisible();
     const teacherRecord = await findRecord(teacherPage);
     await expect(teacherRecord.getByRole("link", { name: "Источники" })).toHaveAttribute("href", `/library?enrollmentId=${enrollment.id}`);
     await expect(teacherRecord.getByLabel("Тема диссертации")).toHaveCount(0);
-    const studentContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});contexts.push(studentContext);const studentPage=await studentContext.newPage();await login(studentPage,"student");await studentPage.goto(`https://localhost:3000/?enrollmentId=${enrollment.id}`);await expect(studentPage.getByRole("progressbar")).toHaveCount(2);await studentPage.getByRole("link",{name:"Профиль",exact:true}).click();
+    await studentPage.goto("https://localhost:3000/");await expect(studentPage.getByRole("progressbar")).toHaveCount(2);await studentPage.getByRole("link",{name:"Профиль",exact:true}).click();
     await expect(studentPage.getByRole("link", { name: "Профиль", exact: true })).toHaveAttribute("aria-current", "page");
     await expect(studentPage.getByRole("navigation", { name: "Разделы кабинета" }).getByRole("link", { name: "Источники" })).toHaveAttribute("href", `/library?enrollmentId=${enrollment.id}`);
     const article=await findRecord(studentPage);await article.getByLabel("Тема диссертации").fill(`Тема ${suffix}`);await article.getByLabel("Научный руководитель").fill("Научный руководитель");await article.getByRole("button",{name:"Сохранить",exact:true}).click();await expect(article.getByRole("status")).toHaveText("Сохранено");
     const forged=await studentPage.request.post("https://localhost:3000/api/education",{headers:{Origin:"https://localhost:3000"},data:{key:randomUUID(),command:{operation:"createGroup",periodId:period.id,name:"Forbidden"}}});expect(forged.status()).toBe(403);
     const current=await directoryEntry(page);
     expect(current).toBeDefined();
-    await command({operation:"assign",id:enrollment.id,version:current!.version,teacherId:teacher2.id,groupId:group.id});
+    await command({operation:"setGroupTeacher",id:economics.id,version:1,teacherId:teacher2.id});
+    expect(await command({operation:"assign",id:enrollment.id,version:current!.version,groupId:economics.id})).toEqual(enrollment);
+    await studentPage.goto("https://localhost:3000/");
+    await expect(studentPage.getByLabel("Учебное назначение")).toContainText(`Экономика ${suffix}`);
+    await expect(studentPage.getByRole("progressbar")).toHaveCount(2);
     await teacherPage.goto(`https://localhost:3000/library?enrollmentId=${enrollment.id}`);await expect(teacherPage.getByRole("heading",{name:"Учебное назначение недоступно"})).toBeVisible();await expect(teacherPage.getByRole("progressbar")).toHaveCount(0);
     const directoryRow = page.locator("[data-slot=collapsible]").filter({
       has: page.getByRole("button").filter({ hasText: person("student").email }),
