@@ -3,15 +3,15 @@ import { AppError } from "@/lib/errors";
 import { studySummary } from "@/modules/education/study-summary";
 import { SourceProgress, TermProgress } from "@/components/study-progress";
 import { pageActor } from "@/modules/identity/page-actor";
-import { studyContext } from "@/modules/education/study-context";
+import { studyContext, teacherGroups } from "@/modules/education/study-context";
 import { AccessDenied } from "@/components/access-denied";
 import { StudyShell, studyHref } from "@/components/site-shell";
-import { NoStudy, StudySelection, StudyUnavailable } from "@/components/study-navigation";
+import { NoStudy, StudyContextLabel, StudyUnavailable, TeacherGroups } from "@/components/study-navigation";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
 export default async function Home({ searchParams }: {
-  searchParams: Promise<{ enrollmentId?: string | string[] }>;
+  searchParams: Promise<{ enrollmentId?: string | string[]; groupId?: string | string[] }>;
 }) {
   const actor = await pageActor();
   if (!actor) return <AccessDenied/>;
@@ -19,7 +19,15 @@ export default async function Home({ searchParams }: {
     <PageHeader title="Главная" /><Button asChild><Link href="/account">Управление обучением</Link></Button>
   </StudyShell>;
 
-  const { choices, selected, unavailable } = await studyContext(actor.id, (await searchParams).enrollmentId);
+  const { enrollmentId, groupId } = await searchParams;
+  if (actor.role === "teacher" && enrollmentId === undefined) {
+    const groups = await teacherGroups(actor.id, groupId);
+    return <StudyShell current="home" role={actor.role}>
+      <PageHeader title="Мои группы"/>
+      <TeacherGroups {...groups}/>
+    </StudyShell>;
+  }
+  const { selected, unavailable } = await studyContext(actor.id, enrollmentId);
   let summary;
   if (selected) {
     try {
@@ -32,7 +40,10 @@ export default async function Home({ searchParams }: {
   return <StudyShell current="home" role={actor.role} enrollmentId={selected?.id}>
     {unavailable ? <StudyUnavailable/> : <>
       <PageHeader title="Главная" />
-      {choices.length ? <StudySelection choices={choices} selected={selected} action="/"/> : <NoStudy/>}
+      {actor.role === "teacher" && selected && <Button variant="outline" asChild>
+        <Link href={`/?groupId=${selected.groupId}`}>К группе</Link>
+      </Button>}
+      {selected ? <StudyContextLabel selected={selected}/> : <NoStudy/>}
       {selected && summary && <div className="dashboard-grid">
         <article><SourceProgress {...summary.sources}/>
           <Button asChild variant="outline"><Link href={studyHref("library", selected.id)}>Открыть источники</Link></Button></article>

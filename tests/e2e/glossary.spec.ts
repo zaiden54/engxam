@@ -1,15 +1,16 @@
-import {test,expect,type Page} from "@playwright/test";
+import {expect,type Page} from "@playwright/test";
+import { test } from "./study-fixtures";
 import {readFileSync} from "node:fs";
 import {randomUUID} from "node:crypto";
 import {PDFDocument} from "pdf-lib";
 import {blockExternalFontRequests} from "./test-fonts";
-test("glossary preview, editing, archive, 500-row batch and teacher read-only access",async({page,browser},testInfo)=>{
-  test.skip(process.env.E2E_STAGE02!=="1","Requires isolated branch fixtures");test.setTimeout(120000);page.setDefaultTimeout(15000);
+test("glossary preview, editing, archive, 500-row batch and teacher read-only access", { tag: "@stage02" },async({page,browser,cleanStudentMembership},testInfo)=>{
+  test.setTimeout(120000);page.setDefaultTimeout(15000);
   const people=JSON.parse(readFileSync(".env.stage02-fixtures.json","utf8")) as {role:string;email:string;password:string;id:string}[];const person=(role:string)=>people.find(p=>p.role===role)!;
   const login=async(p:Page,role:string)=>{await p.goto("https://localhost:3000/login",{waitUntil:"domcontentloaded"});await p.getByLabel("Электронная почта").fill(person(role).email);await p.getByLabel("Пароль",{exact:true}).fill(person(role).password);await p.getByRole("button",{name:"Войти",exact:true}).click();await expect(p).toHaveURL(/\/$/);};
   await blockExternalFontRequests(page);
   await login(page,"admin");const command=async(command:unknown)=>{const response=await page.request.post("/api/education",{timeout:15000,headers:{Origin:"https://localhost:3000"},data:{key:randomUUID(),command}});const result=await response.json();expect(response.ok(),JSON.stringify(result)).toBe(true);return result as {id:string};};
-  const suffix=randomUUID().slice(0,8);const period=await command({operation:"createPeriod",name:`Glossary ${suffix}`,startsOn:"2026-09-02",endsOn:"2027-08-31",preparationDeadline:"2027-04-01"});const group=await command({operation:"createGroup",periodId:period.id,name:`Glossary ${suffix}`});const enrollment=await command({operation:"enroll",studentId:person("student").id,teacherId:person("teacher").id,groupId:group.id,specialty:"Economics",language:"en"});
+  const suffix=randomUUID().slice(0,8);const period=await command({operation:"createPeriod",name:`Glossary ${suffix}`,startsOn:"2026-09-02",endsOn:"2027-08-31",preparationDeadline:"2027-04-01"});const group=await command({operation:"createGroup",periodId:period.id,name:`Glossary ${suffix}`,teacherId:person("teacher").id});const enrollment=await command({operation:"enroll",studentId:cleanStudentMembership,groupId:group.id,specialty:"Economics",language:"en"});
   const before=await page.request.get(`/api/glossary?enrollmentId=${enrollment.id}`);expect(before.status()).toBe(404);
   await page.getByRole("button",{name:"Выйти",exact:true}).click();await expect(page).toHaveURL(/\/login$/);await login(page,"student");await page.goto(`/glossary?enrollmentId=${enrollment.id}`);await expect(page.getByRole("heading",{name:"Словарь терминов"})).toBeVisible();
   const sourceTitle = `Source ${suffix}`;
