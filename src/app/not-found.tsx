@@ -1,2 +1,14 @@
 import Link from "next/link";
-export default function NotFound() { return <main id="main" tabIndex={-1}><section className="card"><p className="eyebrow">404</p><h1>Страница не найдена</h1><Link className="button primary" href="/">На главную</Link></section></main>; }
+import { GuestShell } from "@/components/site-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { GuestPanel } from "@/components/ui/guest-panel";
+import { PageHeader } from "@/components/ui/page-header";
+
+export default function NotFound() {
+  return <GuestShell><GuestPanel>
+    <Badge variant="secondary">404</Badge>
+    <PageHeader title="Страница не найдена" />
+    <Button asChild><Link href="/">На главную</Link></Button>
+  </GuestPanel></GuestShell>;
+}

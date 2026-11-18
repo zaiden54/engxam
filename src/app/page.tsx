@@ -7,6 +7,8 @@ import { studyContext } from "@/modules/education/study-context";
 import { AccessDenied } from "@/components/access-denied";
 import { StudyShell, studyHref } from "@/components/site-shell";
 import { NoStudy, StudySelection, StudyUnavailable } from "@/components/study-navigation";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 
 export default async function Home({ searchParams }: {
   searchParams: Promise<{ enrollmentId?: string | string[] }>;
@@ -14,7 +16,7 @@ export default async function Home({ searchParams }: {
   const actor = await pageActor();
   if (!actor) return <AccessDenied/>;
   if (actor.role === "admin") return <StudyShell current="home" role={actor.role}>
-    <h1>Главная</h1><Link className="button primary" href="/account">Управление обучением</Link>
+    <PageHeader title="Главная" /><Button asChild><Link href="/account">Управление обучением</Link></Button>
   </StudyShell>;
 
   const { choices, selected, unavailable } = await studyContext(actor.id, (await searchParams).enrollmentId);
@@ -29,13 +31,13 @@ export default async function Home({ searchParams }: {
   }
   return <StudyShell current="home" role={actor.role} enrollmentId={selected?.id}>
     {unavailable ? <StudyUnavailable/> : <>
-      <div className="dashboard-heading"><h1>Главная</h1></div>
+      <PageHeader title="Главная" />
       {choices.length ? <StudySelection choices={choices} selected={selected} action="/"/> : <NoStudy/>}
       {selected && summary && <div className="dashboard-grid">
         <article><SourceProgress {...summary.sources}/>
-          <Link className="button" href={studyHref("library", selected.id)}>Открыть источники</Link></article>
+          <Button asChild variant="outline"><Link href={studyHref("library", selected.id)}>Открыть источники</Link></Button></article>
         <article><TermProgress {...summary.terms}/>
-          <Link className="button" href={studyHref("glossary", selected.id)}>Открыть словарь</Link></article>
+          <Button asChild variant="outline"><Link href={studyHref("glossary", selected.id)}>Открыть словарь</Link></Button></article>
       </div>}
     </>}
   </StudyShell>;

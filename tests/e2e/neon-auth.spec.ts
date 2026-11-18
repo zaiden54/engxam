@@ -3,6 +3,25 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import nextEnv from "@next/env";
 nextEnv.loadEnvConfig(process.cwd());
+
+test("login form reports rejected credentials and keeps the entered values", async ({ page }) => {
+  test.skip(process.env.E2E_STAGE02 !== "1", "Requires isolated Stage02 Auth");
+  await page.goto("/login");
+  const email = page.getByLabel("Электронная почта");
+  const password = page.getByLabel("Пароль", { exact: true });
+  await email.fill("unknown@example.invalid");
+  await password.fill("incorrect-password");
+  const rejection = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/auth/sign-in/email"
+    && response.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Войти", exact: true }).click();
+  expect((await rejection).status()).toBe(401);
+  await expect(page.getByRole("group", { name: "Вход в кабинет" }).getByRole("alert")).toBeVisible();
+  await expect(email).toHaveValue("unknown@example.invalid");
+  await expect(password).toHaveValue("incorrect-password");
+});
+
 test("Neon Auth: signup fixture, login, reload, session, logout, protection", async ({ page, request }) => {
   test.skip(process.env.RUN_NEON_E2E !== "1", "Explicit opt-in required for temporary remote user");
   test.setTimeout(90000);

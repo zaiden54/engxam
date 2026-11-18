@@ -8,6 +8,12 @@ Node.js 22+, рекомендуется 24. `npm ci`, затем `npm run dev:ht
 
 `neon deploy` применяет neon.ts к привязанному проекту и сохраняет секреты в игнорируемый .env. Дополнительно нужен NEON_AUTH_COOKIE_SECRET (случайное значение минимум 32 символа). Имена настроек перечислены в .env.example. Не коммитить .env, сертификаты или .neon.
 
+## Компоненты интерфейса
+
+Engxam использует Tailwind CSS 4 и локальные исходники shadcn/ui на Radix. Конфигурация создана с помощью shadcn CLI 4.23.0 и пресета Nova (`radix-nova` в `components.json`). Manrope и выбор темы задаются приложением.
+
+Перед добавлением компонента выполните предварительный просмотр, например `npx shadcn@4.23.0 add button --dry-run`. После проверки запустите команду без `--dry-run` и включите исходники и обновлённый `package-lock.json` в изменения.
+
 ## Проверки
 
 - `npm run build`, `npm run typecheck`, `npm run lint`, `npm test`.

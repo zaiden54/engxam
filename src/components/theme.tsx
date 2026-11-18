@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 export type Theme = "light" | "dark";
 const ThemeContext = createContext<{ theme: Theme | undefined; choose: (theme: Theme) => void } | null>(null);
@@ -26,6 +27,6 @@ export function ThemeSwitch() {
   const systemDark = useSyncExternalStore(subscribe, systemIsDark, () => false);
   if (!preference) throw new Error("ThemeSwitch requires ThemeProvider");
   const dark = preference.theme ? preference.theme === "dark" : systemDark;
-  return <button className="button theme-switch" type="button" aria-pressed={dark}
-    onClick={() => preference.choose(dark ? "light" : "dark")}>Тёмная тема</button>;
+  return <Button variant="outline" className="theme-switch" type="button" aria-pressed={dark}
+    onClick={() => preference.choose(dark ? "light" : "dark")}>Тёмная тема</Button>;
 }
