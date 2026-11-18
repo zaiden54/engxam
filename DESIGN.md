@@ -7,19 +7,18 @@ Engxam is a Russian-language workspace for postgraduate foreign-language exam pr
 The interface supports recurring reading and editing. Use continuous record lists, reveal lengthy editors inline, and preserve the selected enrollment when moving between literature and terminology. Use semantic links, native form inputs, and the shared button, collapsible, and dialog components.
 
 ```text
-Engxam                                    Theme / Sign out
-Home / Literature / Glossary / Profile
-Page title and description
-Selected enrollment and progress
-Add actions, search and filters
-Continuous records
-Pagination
+Desktop header    Engxam                          Theme / Sign out
+Desktop sidebar   Home | Sources | Glossary | Profile
+Main              Page title, study context, page content
+Mobile header     Engxam                                       Menu
+Mobile bottom     Home | Sources | Glossary | Profile
 ```
 
 ## Tokens and typography
 
 - Use `background`, `card`, and `muted` for surfaces. Use `foreground` and `muted-foreground` for text.
-- Use the burgundy `primary` token for principal actions, `accent` for selection, `destructive` for errors, and `ring` for focus. The CSS resolves each theme from `data-theme` on the document root, with the system theme as fallback.
+- Use `primary` and `primary-foreground` for principal actions. Use the readable red `accent-ink` for links and progress, `accent` for the selected surface, `destructive` for errors, and `ring` for offset keyboard focus. The warmer brand accent is available for decorative borders.
+- Light surfaces use `#F6F5F9`, `#FFFFFF`, and `#EEECF3`. Dark surfaces use `#25262F`, `#393B48`, and `#343642`. Main text is `#171520` or `#F5F5F5`. The CSS resolves each theme from `data-theme` on the document root, with the system theme as fallback.
 - Use Manrope for Cyrillic and Latin text, with system fallbacks. Product text uses a rem scale. Mobile input text is at least 16px.
 - Spacing follows a 4px scale. The radius token is 6px, with related sizes for controls and panels. Borders establish structure.
 - Input outlines use a stronger semantic control-border token. Interactive states include hover, pressed, keyboard focus, disabled, and pending feedback. Muted text remains readable; metadata is not a decorative eyebrow.
@@ -27,7 +26,7 @@ Pagination
 
 ## Responsive behavior and accessibility
 
-The header places role-specific links below the brand and account actions. Links wrap on narrow screens and identify the active page with `aria-current`. Editors and definition lists stack. Give controls on coarse pointers a target of at least 44px. Keep visible keyboard focus, the skip link, native form validation, password-manager support, and 200% text reflow.
+At 1024 CSS px and above, a sidebar lists the role’s sections. The menu holds those links at 768–1023 CSS px and closes on navigation or Escape, with Escape restoring focus to the trigger. Below 768 CSS px, the header menu holds account actions and the fixed bottom bar holds the section links. Links wrap and identify the active page with `aria-current`. The bottom bar reserves its measured height, including the device safe area, for content and keyboard scrolling. Editors and definition lists stack. Give controls on coarse pointers a target of at least 44px. Keep visible keyboard focus, the skip link, native form validation, password-manager support, and 200% text reflow.
 
 Use status messages for routine updates and alerts for errors. Keep form values after a failed request and disable repeated submission while it is pending. The modal returns focus to its trigger after dismissal and keeps the explicit PDF cancellation action available during upload.
 

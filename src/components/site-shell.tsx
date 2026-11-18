@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SignOut } from "./sign-out";
+import { StudyMenu, MobileStudyNav } from "./study-menu";
 import { ThemeSwitch } from "./theme";
-import { Button } from "@/components/ui/button";
+import { SignOut } from "./sign-out";
 
 function Brand({ href = "/" }: { href?: string }) {
   return <Link className="site-brand" href={href}>Engxam<span>Подготовка к кандидатскому экзамену</span></Link>;
@@ -30,15 +30,26 @@ export function StudyShell({ children, current, role, enrollmentId }: {
     account: role === "student" ? "Профиль" : role === "teacher" ? "Мои студенты" : "Управление",
   };
   const sections: Section[] = role === "admin" ? ["home", "account"] : ["home", "library", "glossary", "account"];
-  return <div className="site-shell">
+  const links = sections.map(section => ({
+    href: studyHref(section, enrollmentId),
+    label: labels[section],
+    current: section === current,
+  }));
+  return <div className="site-shell study-shell">
     <header className="site-header">
-      <div className="site-width site-header-inner"><Brand href={studyHref("home", enrollmentId)}/><div className="site-tools"><ThemeSwitch/><SignOut/></div></div>
-      <nav className="site-width site-nav" aria-label="Разделы кабинета">
-        {sections.map(section => <Button key={section} variant="ghost" className="h-auto rounded-none" asChild>
-          <Link href={studyHref(section, enrollmentId)} aria-current={section === current ? "page" : undefined}>{labels[section]}</Link>
-        </Button>)}
-      </nav>
+      <div className="site-width site-header-inner">
+        <Brand href={studyHref("home", enrollmentId)}/>
+        <div className="site-tools desktop-tools"><ThemeSwitch/><SignOut/></div>
+        <StudyMenu links={links}/>
+      </div>
     </header>
-    <main id="main" tabIndex={-1} className="site-width study-main">{children}</main>
+    <div className="site-width study-layout">
+      <nav className="site-nav desktop-study-nav" aria-label="Разделы кабинета">
+        {links.map(link => <Link key={link.href} href={link.href}
+          aria-current={link.current ? "page" : undefined}>{link.label}</Link>)}
+      </nav>
+      <main id="main" tabIndex={-1} className="study-main">{children}</main>
+    </div>
+    <MobileStudyNav links={links}/>
   </div>;
 }

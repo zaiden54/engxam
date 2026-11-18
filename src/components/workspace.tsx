@@ -16,12 +16,43 @@ import { Badge } from "./ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { ListPagination } from "./ui/list-pagination";
 import { Textarea } from "./ui/textarea";
+import { StatusMessage } from "./ui/states";
 
 const roleLabels={admin:"Администратор",teacher:"Преподаватель",student:"Студент"};
 function CommandForm({children,build,label="Сохранить"}:{children:React.ReactNode;build:(data:FormData)=>Command;label?:string}){
-  const [status,setStatus]=useState("");const [pending,setPending]=useState(false);const router=useRouter();
+  const [status, setStatus] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [pending, setPending] = useState(false);
   const [key,setKey]=useState<string|null>(null);
-  return <form className="stack-form" autoComplete="off" aria-busy={pending} onSubmit={async event=>{event.preventDefault();setPending(true);setStatus("");const input=build(new FormData(event.currentTarget));const requestKey=key??crypto.randomUUID();setKey(requestKey);try{const result=await educationAction({key:requestKey,command:input});if(result.ok){setStatus("Сохранено");setKey(null);router.refresh();}else{setStatus(result.error.message);if(result.error.code!=="UNAVAILABLE")setKey(null);}}catch{setStatus("Не удалось связаться с сервером. Повторите запрос.");}finally{setPending(false);}}} onChange={()=>{if(!pending)setKey(null);}}><fieldset disabled={pending}>{children}<Button type="submit">{pending?"Сохраняем…":label}</Button></fieldset><p role="status" aria-live="polite">{status}</p></form>;
+  const router = useRouter();
+
+  return <form className="stack-form" autoComplete="off" aria-busy={pending} onChange={() => { if (!pending) setKey(null); }}
+    onSubmit={async event => {
+      event.preventDefault();
+      if (pending) return;
+      const command = build(new FormData(event.currentTarget));
+      const requestKey = key ?? crypto.randomUUID();
+      setKey(requestKey);
+      setPending(true);
+      setStatus(null);
+      try {
+        const result = await educationAction({ key: requestKey, command });
+        if (result.ok) {
+          setStatus({ kind: "success", text: "Сохранено" });
+          setKey(null);
+          router.refresh();
+        } else {
+          setStatus({ kind: "error", text: result.error.message });
+          if (result.error.code !== "UNAVAILABLE") setKey(null);
+        }
+      } catch {
+        setStatus({ kind: "error", text: "Не удалось связаться с сервером. Повторите запрос." });
+      } finally {
+        setPending(false);
+      }
+    }}>
+    <fieldset disabled={pending}>{children}<Button type="submit">{pending ? "Сохраняем…" : label}</Button></fieldset>
+    {status && <StatusMessage kind={status.kind}>{status.text}</StatusMessage>}
+  </form>;
 }
 function Input({name,label,type="text",value,required=true}:{name:string;label:string;type?:string;value?:string;required?:boolean}){
   const id = useId();
